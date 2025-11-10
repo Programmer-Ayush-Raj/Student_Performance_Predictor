@@ -3,8 +3,13 @@
  */
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+// ✅ Use Render backend in production, fallback to localhost for development
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
+console.log("Using API base URL:", API_BASE_URL); // For debugging, remove later if not needed
+
+// Axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -12,7 +17,7 @@ const api = axios.create({
   },
 });
 
-// Request interceptor to add auth token
+// ✅ Request interceptor to attach admin token (if any)
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('admin_token');
@@ -21,41 +26,43 @@ api.interceptors.request.use(
     }
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Response interceptor for error handling
+// ✅ Response interceptor for error handling
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response) {
-      // Server responded with error
       const status = error.response.status;
-      let message = error.response.data?.detail || error.response.data?.message || error.message;
-      
-      // Provide more helpful error messages
+      let message =
+        error.response.data?.detail ||
+        error.response.data?.message ||
+        error.message;
+
       if (status === 404) {
-        message = `Endpoint not found: ${error.config?.url}. Please check if the backend is running and the endpoint exists.`;
+        message = `❌ Endpoint not found: ${error.config?.url}. Check backend route.`;
       } else if (status === 401) {
-        message = 'Unauthorized. Please check your admin token.';
+        message = '⚠️ Unauthorized. Please check your admin token.';
       } else if (status === 400) {
-        message = error.response.data?.detail || error.response.data?.message || 'Bad request. Please check your input.';
+        message =
+          error.response.data?.detail ||
+          error.response.data?.message ||
+          'Bad request. Please verify input.';
       }
-      
+
       return Promise.reject(new Error(message));
     } else if (error.request) {
-      // Request made but no response
-      return Promise.reject(new Error('Network error. Please check if the backend is running.'));
+      return Promise.reject(
+        new Error('🌐 Network error. Backend might be offline.')
+      );
     } else {
-      // Something else happened
       return Promise.reject(error);
     }
   }
 );
 
-// Types
+// ✅ Interfaces (TypeScript types)
 export interface PredictRequest {
   student_id?: number;
   course_id?: number;
@@ -161,7 +168,7 @@ export interface UpdateThresholdResponse {
   source: string;
 }
 
-// API functions
+// ✅ API methods
 export const apiClient = {
   // Health check
   healthCheck: async () => {
@@ -175,19 +182,21 @@ export const apiClient = {
     return response.data;
   },
 
-  // Batch prediction (admin)
+  // Batch prediction
   predictBatch: async (): Promise<PredictBatchResponse> => {
     const response = await api.post('/api/predict_batch');
     return response.data;
   },
 
-  // Retrain (admin)
+  // Retrain
   retrain: async (): Promise<RetrainResponse> => {
     const response = await api.post('/api/retrain');
     return response.data;
   },
 
-  updateThreshold: async (threshold: number): Promise<UpdateThresholdResponse> => {
+  updateThreshold: async (
+    threshold: number
+  ): Promise<UpdateThresholdResponse> => {
     const response = await api.post('/api/settings/threshold', { threshold });
     return response.data;
   },
@@ -197,8 +206,11 @@ export const apiClient = {
     return response.data;
   },
 
-  // Students CRUD
-  getStudents: async (page: number = 1, limit: number = 10): Promise<PaginatedStudents> => {
+  // Student operations
+  getStudents: async (
+    page: number = 1,
+    limit: number = 10
+  ): Promise<PaginatedStudents> => {
     const response = await api.get(`/api/students?page=${page}&limit=${limit}`);
     return response.data;
   },
@@ -208,8 +220,11 @@ export const apiClient = {
     return response.data;
   },
 
-  createStudent: async (data: { name: string; dept_id?: number } | { FullName: string; DepartmentID?: number }): Promise<Student> => {
-    // Handle both naming conventions
+  createStudent: async (
+    data:
+      | { name: string; dept_id?: number }
+      | { FullName: string; DepartmentID?: number }
+  ): Promise<Student> => {
     const payload: { name: string; dept_id?: number } = {
       name: (data as any).FullName || (data as any).name,
       dept_id: (data as any).DepartmentID || (data as any).dept_id,
@@ -220,20 +235,21 @@ export const apiClient = {
 
   updateStudent: async (
     studentId: number,
-    data: { name?: string; dept_id?: number } | { FullName?: string; DepartmentID?: number }
+    data:
+      | { name?: string; dept_id?: number }
+      | { FullName?: string; DepartmentID?: number }
   ): Promise<Student> => {
-    // Handle both naming conventions
     const payload: { name?: string; dept_id?: number } = {};
-    if ((data as any).FullName !== undefined) {
+    if ((data as any).FullName !== undefined)
       payload.name = (data as any).FullName;
-    } else if ((data as any).name !== undefined) {
+    else if ((data as any).name !== undefined)
       payload.name = (data as any).name;
-    }
-    if ((data as any).DepartmentID !== undefined) {
+
+    if ((data as any).DepartmentID !== undefined)
       payload.dept_id = (data as any).DepartmentID;
-    } else if ((data as any).dept_id !== undefined) {
+    else if ((data as any).dept_id !== undefined)
       payload.dept_id = (data as any).dept_id;
-    }
+
     const response = await api.put(`/api/students/${studentId}`, payload);
     return response.data;
   },
@@ -242,7 +258,7 @@ export const apiClient = {
     await api.delete(`/api/students/${studentId}`);
   },
 
-  // Export (admin)
+  // Export
   exportData: async (): Promise<Blob> => {
     const response = await api.post('/api/export', {}, { responseType: 'blob' });
     return response.data;
@@ -250,4 +266,3 @@ export const apiClient = {
 };
 
 export default api;
-
