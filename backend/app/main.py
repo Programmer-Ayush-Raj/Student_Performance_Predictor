@@ -13,7 +13,11 @@ from sqlalchemy.orm import Session
 
 from . import crud, models, schemas
 from .database import get_db, init_db
-from .ml.train import METADATA_PATH_DEFAULT, MODEL_PATH_DEFAULT, train_from_db
+from .ml.train import (
+    METADATA_PATH_DEFAULT,
+    MODEL_PATH_DEFAULT,
+    train_from_csv,
+)
 from .ml.predictor import InvalidInputError, Predictor
 
 
@@ -40,7 +44,7 @@ app.add_middleware(
 def startup_event():
     """Initialize database tables on startup."""
     init_db()
-    # Ensure models directory exists
+    # Ensure models and data directories exist
     os.makedirs("./models", exist_ok=True)
     os.makedirs("./data", exist_ok=True)
 
@@ -109,36 +113,25 @@ def health_check():
 
 # Prediction endpoints
 @app.post("/api/predict", response_model=schemas.PredictResponse)
-def predict(
-    request: schemas.PredictRequest,
-    db: Session = Depends(get_db)
-):
-    """
-    Predict student performance based on input features.
-    Public endpoint - no authentication required.
-    """
+def predict(request: schemas.PredictRequest, db: Session = Depends(get_db)):
+    """Predict student performance."""
     try:
         predictor = Predictor(model_path=MODEL_PATH, metadata_path=METADATA_PATH)
-
         result = predictor.predict(
             attendance=request.attendance,
             marks=request.marks,
             internal_score=request.internal_score,
             final_exam_score=request.final_exam_score,
         )
-
         return result
     except InvalidInputError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except FileNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Model not trained yet. Please train the model first using /api/retrain",
         )
-    except Exception as exc:  # pragma: no cover - unexpected paths
+    except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Prediction error: {str(exc)}",
@@ -146,57 +139,33 @@ def predict(
 
 
 @app.post("/api/predict_batch", response_model=schemas.PredictBatchResponseList)
-def predict_batch(
-    db: Session = Depends(get_db),
-    _: None = Depends(verify_admin_token)
-):
-    """
-    Run batch predictions for all enrollments in the database.
-    Admin endpoint - requires authentication.
-    """
+def predict_batch(db: Session = Depends(get_db), _: None = Depends(verify_admin_token)):
+    """Batch prediction for all students."""
     try:
         predictor = Predictor(model_path=MODEL_PATH, metadata_path=METADATA_PATH)
-
-        # Get all enrollments
         enrollments = crud.get_all_enrollments_for_batch_prediction(db)
-        
-        # Prepare data for prediction
+
         prediction_data = []
         for enrollment in enrollments:
             if (enrollment.attendance is not None and
                 enrollment.marks is not None and
                 enrollment.internal_score is not None):
                 prediction_data.append({
-                    'student_id': enrollment.student_id,
-                    'course_id': enrollment.course_id,
-                    'attendance': enrollment.attendance,
-                    'marks': enrollment.marks,
-                    'internal_score': enrollment.internal_score
+                    "student_id": enrollment.student_id,
+                    "course_id": enrollment.course_id,
+                    "attendance": enrollment.attendance,
+                    "marks": enrollment.marks,
+                    "internal_score": enrollment.internal_score
                 })
-        
+
         if not prediction_data:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="No enrollments with complete data found for prediction"
             )
-        
-        # Run predictions
-        predictions = predictor.predict_batch(prediction_data)
 
-        return {
-            "predictions": predictions,
-            "total": len(predictions)
-        }
-    except InvalidInputError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
-        )
-    except FileNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model not trained yet. Please train the model first using /api/retrain"
-        )
+        predictions = predictor.predict_batch(prediction_data)
+        return {"predictions": predictions, "total": len(predictions)}
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -204,223 +173,140 @@ def predict_batch(
         )
 
 
+# ✅ FIXED Retrain Endpoint
 @app.post("/api/retrain", response_model=schemas.RetrainResponse)
-def retrain(
-    db: Session = Depends(get_db),
-    _: None = Depends(verify_admin_token)
-):
-    """
-    Retrain the ML model using data from the enrollments table.
-    Admin endpoint - requires authentication.
-    """
+def retrain(_: None = Depends(verify_admin_token)):
+    """Retrain ML model using CSV data."""
     try:
-        enrollments = crud.get_training_data(db)
-
-        if len(enrollments) < 10:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Insufficient training data. Need at least 10 samples with complete data, got {len(enrollments)}"
-            )
-
-        _, metrics, metadata = train_from_db(
-            enrollments,
+        _, metrics, metadata = train_from_csv(
+            csv_path="./data/student_data_sample.csv",
             model_path=MODEL_PATH,
             metadata_path=METADATA_PATH,
         )
 
         return {
-            "accuracy": metrics['accuracy'],
-            "precision": metrics['precision'],
-            "recall": metrics['recall'],
-            "f1_score": metrics['f1_score'],
-            "roc_auc": metadata.get('roc_auc'),
+            "accuracy": metrics["accuracy"],
+            "precision": metrics["precision"],
+            "recall": metrics["recall"],
+            "f1_score": metrics["f1_score"],
+            "roc_auc": metadata.get("roc_auc"),
             "model_path": MODEL_PATH,
             "metadata_path": METADATA_PATH,
             "timestamp": datetime.utcnow().isoformat() + "Z",
-            "samples_used": len(enrollments),
-            "class_distribution": metadata.get('class_distribution', {}),
-            "class_counts": metadata.get('class_counts', {}),
-            "recommended_threshold": metadata.get('recommended_threshold', 0.6),
-            "metrics_cv": metadata.get('metrics_cv', {}),
-            "user_threshold": metadata.get('user_threshold'),
+            "samples_used": metadata.get("samples_used", 0),
+            "class_distribution": metadata.get("class_distribution", {}),
+            "class_counts": metadata.get("class_counts", {}),
+            "recommended_threshold": metadata.get("recommended_threshold", 0.6),
+            "metrics_cv": metadata.get("metrics_cv", {}),
+            "user_threshold": metadata.get("user_threshold"),
         }
-    except ValueError as exc:
+    except FileNotFoundError:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(exc),
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="CSV file not found. Please ensure student_data_sample.csv exists in /data.",
         )
-    except HTTPException as exc:
-        raise exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Training error: {str(e)}"
+            detail=f"Training error: {str(e)}",
         )
 
 
 @app.post("/api/settings/threshold", response_model=schemas.UpdateThresholdResponse)
-def update_threshold(
-    payload: schemas.UpdateThresholdRequest,
-    _: None = Depends(verify_admin_token)
-):
+def update_threshold(payload: schemas.UpdateThresholdRequest, _: None = Depends(verify_admin_token)):
     """Allow admin to persist a custom decision threshold."""
     threshold = payload.threshold
-
     if not 0.0 < threshold < 1.0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Threshold must be between 0 and 1.",
-        )
+        raise HTTPException(status_code=400, detail="Threshold must be between 0 and 1.")
 
-    metadata: dict = {}
+    metadata = {}
     if os.path.exists(METADATA_PATH):
         try:
             with open(METADATA_PATH, "r", encoding="utf-8") as fp:
                 loaded = json.load(fp)
-            if isinstance(loaded, dict):
-                metadata = loaded
-        except json.JSONDecodeError as exc:
-            logger.warning("Failed to parse metadata for threshold update: %s", exc)
+                if isinstance(loaded, dict):
+                    metadata = loaded
+        except json.JSONDecodeError:
             metadata = {}
 
     metadata["user_threshold"] = float(threshold)
-    metadata.setdefault("recommended_threshold", max(0.6, float(threshold)))
     metadata["user_threshold_set_at"] = datetime.utcnow().isoformat() + "Z"
 
     os.makedirs(os.path.dirname(METADATA_PATH), exist_ok=True)
     with open(METADATA_PATH, "w", encoding="utf-8") as fp:
         json.dump(metadata, fp, indent=2)
 
-    return {
-        "threshold": float(threshold),
-        "source": "metadata",
-    }
+    return {"threshold": float(threshold), "source": "metadata"}
 
 
 @app.get("/api/settings/threshold", response_model=schemas.UpdateThresholdResponse)
 def get_threshold(_: None = Depends(verify_admin_token)):
     threshold, source = _resolve_threshold_with_source()
-    return {
-        "threshold": threshold,
-        "source": source,
-    }
+    return {"threshold": threshold, "source": source}
 
 
 # Student CRUD endpoints
 @app.get("/api/students", response_model=schemas.PaginatedStudents)
-def get_students(
-    page: int = 1,
-    limit: int = 10,
-    db: Session = Depends(get_db)
-):
-    """Get all students with pagination."""
+def get_students(page: int = 1, limit: int = 10, db: Session = Depends(get_db)):
     skip = (page - 1) * limit
     students, total = crud.get_students(db, skip=skip, limit=limit)
-    pages = (total + limit - 1) // limit  # Ceiling division
-    
-    return {
-        "items": students,
-        "total": total,
-        "page": page,
-        "limit": limit,
-        "pages": pages
-    }
+    pages = (total + limit - 1) // limit
+    return {"items": students, "total": total, "page": page, "limit": limit, "pages": pages}
 
 
 @app.get("/api/students/{student_id}", response_model=schemas.StudentResponse)
 def get_student(student_id: int, db: Session = Depends(get_db)):
-    """Get a specific student by ID."""
     student = crud.get_student(db, student_id)
     if not student:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Student with ID {student_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Student with ID {student_id} not found")
     return student
 
 
-@app.post("/api/students", response_model=schemas.StudentResponse, status_code=status.HTTP_201_CREATED)
+@app.post("/api/students", response_model=schemas.StudentResponse, status_code=201)
 def create_student(student: schemas.StudentCreate, db: Session = Depends(get_db)):
-    """Create a new student."""
     return crud.create_student(db, student)
 
 
 @app.put("/api/students/{student_id}", response_model=schemas.StudentResponse)
-def update_student(
-    student_id: int,
-    student_update: schemas.StudentUpdate,
-    db: Session = Depends(get_db)
-):
-    """Update a student."""
+def update_student(student_id: int, student_update: schemas.StudentUpdate, db: Session = Depends(get_db)):
     student = crud.update_student(db, student_id, student_update)
     if not student:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Student with ID {student_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Student with ID {student_id} not found")
     return student
 
 
-@app.delete("/api/students/{student_id}", status_code=status.HTTP_204_NO_CONTENT)
+@app.delete("/api/students/{student_id}", status_code=204)
 def delete_student(student_id: int, db: Session = Depends(get_db)):
-    """Delete a student."""
     success = crud.delete_student(db, student_id)
     if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Student with ID {student_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Student with ID {student_id} not found")
 
 
-# Export endpoint
 @app.post("/api/export")
-def export_data(
-    db: Session = Depends(get_db),
-    _: None = Depends(verify_admin_token)
-):
-    """
-    Export training-ready CSV from current database.
-    Admin endpoint - requires authentication.
-    """
+def export_data(db: Session = Depends(get_db), _: None = Depends(verify_admin_token)):
+    """Export student data as CSV."""
     try:
         enrollments = crud.get_training_data(db)
-        
         if not enrollments:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No training data available to export"
-            )
-        
-        # Prepare CSV file
+            raise HTTPException(status_code=400, detail="No data available for export")
+
         csv_path = "./data/student_data_export.csv"
         os.makedirs(os.path.dirname(csv_path), exist_ok=True)
-        
-        with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             writer.writerow([
-                'student_id', 'course_id', 'attendance', 'marks',
-                'internal_score', 'final_exam_score', 'result'
+                "student_id", "course_id", "attendance", "marks",
+                "internal_score", "final_exam_score", "result"
             ])
-            
-            for enrollment in enrollments:
+            for e in enrollments:
                 writer.writerow([
-                    enrollment.student_id,
-                    enrollment.course_id,
-                    enrollment.attendance,
-                    enrollment.marks,
-                    enrollment.internal_score,
-                    enrollment.final_exam_score,
-                    enrollment.result
+                    e.student_id, e.course_id, e.attendance, e.marks,
+                    e.internal_score, e.final_exam_score, e.result
                 ])
-        
-        return FileResponse(
-            csv_path,
-            media_type='text/csv',
-            filename='student_data_export.csv'
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Export error: {str(e)}"
-        )
 
+        return FileResponse(csv_path, media_type="text/csv", filename="student_data_export.csv")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export error: {str(e)}")
