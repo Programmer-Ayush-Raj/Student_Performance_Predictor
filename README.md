@@ -15,6 +15,7 @@
 
 ## 🌐 Live Demo  
 student-performance-predictor-brown.vercel.app
+
 ---
 
 ## 🧠 Overview  
