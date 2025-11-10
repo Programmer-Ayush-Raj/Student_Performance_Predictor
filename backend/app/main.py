@@ -53,12 +53,29 @@ def startup_event():
     os.makedirs(os.path.join(BASE_DIR, "models"), exist_ok=True)
     os.makedirs(DATA_DIR_ABS, exist_ok=True)
     
-    # Verify data files exist
+    # Verify data files exist - use print for visibility in logs
     sample_csv = os.path.join(DATA_DIR_ABS, "student_data_sample.csv")
+    print(f"🔍 Checking for data file at: {sample_csv}")
+    print(f"📁 BASE_DIR: {BASE_DIR}")
+    print(f"📁 DATA_DIR_ABS: {DATA_DIR_ABS}")
+    print(f"📁 Current working directory: {os.getcwd()}")
+    
     if not os.path.exists(sample_csv):
+        print(f"⚠️  WARNING: student_data_sample.csv not found at {sample_csv}")
+        print("   The /api/retrain endpoint may not work until the file is available.")
         logger.warning(f"⚠️  Warning: student_data_sample.csv not found at {sample_csv}")
         logger.warning("   The /api/retrain endpoint may not work until the file is available.")
+        
+        # List what's actually in the data directory
+        if os.path.exists(DATA_DIR_ABS):
+            print(f"📂 Contents of {DATA_DIR_ABS}:")
+            try:
+                for item in os.listdir(DATA_DIR_ABS):
+                    print(f"   - {item}")
+            except Exception as e:
+                print(f"   Error listing directory: {e}")
     else:
+        print(f"✅ Found student_data_sample.csv at {sample_csv}")
         logger.info(f"✅ Found student_data_sample.csv at {sample_csv}")
 
 
