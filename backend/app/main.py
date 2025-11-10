@@ -191,12 +191,23 @@ def predict_batch(db: Session = Depends(get_db), _: None = Depends(verify_admin_
         if not prediction_data:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No enrollments with complete data found for prediction"
+                detail="No enrollments with complete data found for prediction. Please ensure students have attendance, marks, and internal_score values."
             )
 
         predictions = predictor.predict_batch(prediction_data)
         return {"predictions": predictions, "total": len(predictions)}
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Model not trained yet. Please train the model first using /api/retrain. Error: {str(exc)}"
+        )
+    except InvalidInputError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid input data: {str(exc)}"
+        )
     except Exception as exc:
+        logger.error(f"Batch prediction error: {exc}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Batch prediction error: {str(exc)}"
