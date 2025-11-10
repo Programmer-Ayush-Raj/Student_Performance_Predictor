@@ -4,6 +4,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/Docker-available-blue)](https://www.docker.com/)
 
+<p align="center">
+  <img src="./assets/banner.png" alt="Student Performance Predictor Banner" width="100%">
+</p>
+
 # 🎓 Student Performance Predictor  
 > An AI-powered full-stack web application that predicts student performance and provides smart, personalized feedback to help improve learning outcomes.
 
