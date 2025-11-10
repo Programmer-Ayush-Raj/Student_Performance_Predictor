@@ -264,10 +264,18 @@ def train_from_db(
 
 
 def train_from_csv(
-    csv_path: str,
+    csv_path: str = None,
     model_path: str = MODEL_PATH_DEFAULT,
     metadata_path: str = METADATA_PATH_DEFAULT,
 ) -> Tuple[CalibratedClassifierCV, Dict[str, float], Dict[str, object]]:
+    # Dynamically build absolute path
+    import os
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+    if csv_path is None:
+        csv_path = os.path.join(BASE_DIR, "../../data/student_data_export.csv")
+
+    print(f"Loading CSV from: {csv_path}")  # For Render logs
     df = pd.read_csv(csv_path)
     df = df.dropna(subset=["result"])
 
@@ -275,4 +283,3 @@ def train_from_csv(
         raise ValueError(f"Insufficient data for training. Need at least 10 samples, got {len(df)}")
 
     return train_model(df, model_path=model_path, metadata_path=metadata_path)
-
