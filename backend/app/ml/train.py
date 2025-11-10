@@ -55,10 +55,14 @@ def train_model(df: pd.DataFrame, model_path: str, metadata_path: str) -> Tuple[
         "f1_score": float(f1_score(y_test, y_pred, zero_division=0)),
     }
 
+    # Convert class_counts to native Python types for JSON serialization
+    class_counts_raw = df["result"].value_counts().to_dict()
+    class_counts = {int(k): int(v) for k, v in class_counts_raw.items()}
+    
     metadata = {
         "roc_auc": float(roc_auc_score(y_test, y_proba)),
         "samples_used": int(len(df)),
-        "class_counts": dict(df["result"].value_counts()),
+        "class_counts": class_counts,
         "recommended_threshold": 0.6,
     }
 
