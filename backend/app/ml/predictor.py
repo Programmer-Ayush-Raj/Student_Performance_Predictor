@@ -36,6 +36,7 @@ class Predictor:
         self.model_path = model_path
         self.metadata_path = metadata_path
         self.model = None
+        self.scaler = None
         self.metadata: Dict[str, object] = {}
         self.threshold = 0.6
         self._load_model_and_metadata()
@@ -50,7 +51,17 @@ class Predictor:
             )
 
         try:
-            self.model = joblib.load(self.model_path)
+            loaded = joblib.load(self.model_path)
+            # Handle both dict format (new) and direct model (old format for compatibility)
+            if isinstance(loaded, dict):
+                self.model = loaded.get("model")
+                self.scaler = loaded.get("scaler")
+                if self.model is None:
+                    raise ValueError("Model not found in saved file. Expected dict with 'model' key.")
+            else:
+                # Old format: model saved directly
+                self.model = loaded
+                self.scaler = None
         except Exception as exc:  # pragma: no cover - critical failure
             logger.error("Error loading model: %s", exc)
             raise
@@ -335,8 +346,15 @@ class Predictor:
 
         suspicion_notes = self._collect_suspicion_markers(features, final_exam_score)
         raw_vector = np.array([features[feat] for feat in FEATURES], dtype=float)
+        
+        # Scale the features using the scaler if available
+        if self.scaler is not None:
+            scaled_vector = self.scaler.transform(raw_vector.reshape(1, -1))
+        else:
+            # Fallback to manual standardization if scaler not available
+            scaled_vector = self._standardize(raw_vector).reshape(1, -1)
 
-        proba = float(self.model.predict_proba(raw_vector.reshape(1, -1))[0][1])
+        proba = float(self.model.predict_proba(scaled_vector)[0][1])
         prediction = int(proba >= self.threshold)
 
         explanation = self._build_explanation(raw_vector)
@@ -386,7 +404,15 @@ class Predictor:
             features_matrix.append([features[feat] for feat in FEATURES])
             processed_inputs.append({"meta": item, "features": features, "notes": suspicion_notes})
 
-        predictions = self.model.predict_proba(np.array(features_matrix))[:, 1]
+        # Scale the features using the scaler if available
+        features_array = np.array(features_matrix)
+        if self.scaler is not None:
+            scaled_features = self.scaler.transform(features_array)
+        else:
+            # Fallback to manual standardization if scaler not available
+            scaled_features = np.array([self._standardize(row) for row in features_array])
+        
+        predictions = self.model.predict_proba(scaled_features)[:, 1]
 
         results = []
         for idx, processed in enumerate(processed_inputs):
