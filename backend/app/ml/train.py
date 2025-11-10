@@ -1,266 +1,75 @@
-"""
-ML training pipeline for student performance prediction.
-"""
-from __future__ import annotations
-
-import json
-import logging
+"""Training module for Student Performance Prediction."""
 import os
-from datetime import datetime
-from typing import Dict, Tuple, List
-
 import joblib
-import numpy as np
 import pandas as pd
+from typing import Dict, Tuple
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
-    f1_score,
+    accuracy_score,
     precision_score,
     recall_score,
-    roc_auc_score,
-    roc_curve,
+    f1_score,
+    roc_auc_score
 )
-from sklearn.model_selection import cross_validate
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.inspection import permutation_importance
 
-logger = logging.getLogger(__name__)
+# Default paths
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+MODEL_DIR = os.path.join(BASE_DIR, "models")
+DATA_DIR = os.path.join(BASE_DIR, "data")
 
-FEATURES: List[str] = ["attendance", "marks", "internal_score"]
-MODEL_PATH_DEFAULT = "./models/marks_classifier.joblib"
-METADATA_PATH_DEFAULT = "./models/metadata.json"
+MODEL_PATH_DEFAULT = os.path.join(MODEL_DIR, "marks_classifier.joblib")
+METADATA_PATH_DEFAULT = os.path.join(MODEL_DIR, "metadata.json")
 
-
-def _validate_columns(df: pd.DataFrame) -> None:
-    missing_cols = [col for col in FEATURES + ["result"] if col not in df.columns]
-    if missing_cols:
-        raise ValueError(f"Missing required columns: {missing_cols}")
+os.makedirs(MODEL_DIR, exist_ok=True)
+os.makedirs(DATA_DIR, exist_ok=True)
 
 
-def _prepare_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Dict[str, float]]]:
-    """Prepare features and record imputation statistics."""
-    features = df[FEATURES].copy()
-    imputation_stats: Dict[str, Dict[str, float]] = {}
+def train_model(df: pd.DataFrame, model_path: str, metadata_path: str) -> Tuple[CalibratedClassifierCV, Dict[str, float], Dict[str, object]]:
+    """Train model using dataset and save artifacts."""
+    X = df[["attendance", "marks", "internal_score"]]
+    y = df["result"]
 
-    for col in FEATURES:
-        missing = int(features[col].isna().sum())
-        if missing > 0:
-            median_val = float(features[col].median())
-            features[col] = features[col].fillna(median_val)
-            imputation_stats[col] = {"imputed_count": missing, "median_used": median_val}
-            logger.warning("Filled %s missing values in %s with median %.2f", missing, col, median_val)
-        else:
-            imputation_stats[col] = {"imputed_count": 0}
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    return features, imputation_stats
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
 
+    base_model = LogisticRegression(max_iter=200)
+    model = CalibratedClassifierCV(base_model)
+    model.fit(X_train_scaled, y_train)
 
-def _build_base_pipeline(random_state: int) -> Pipeline:
-    return Pipeline(
-        steps=[
-            ("scaler", StandardScaler()),
-            (
-                "classifier",
-                LogisticRegression(
-                    solver="liblinear",
-                    class_weight="balanced",
-                    random_state=random_state,
-                ),
-            ),
-        ]
-    )
-
-
-def _compute_metrics(
-    X: pd.DataFrame, y: pd.Series, random_state: int
-) -> Tuple[Dict[str, float], np.ndarray, float]:
-    base_pipeline = _build_base_pipeline(random_state)
-    scoring = {
-        "accuracy": "accuracy",
-        "precision": "precision",
-        "recall": "recall",
-        "f1": "f1",
-    }
-    cv_results = cross_validate(
-        base_pipeline,
-        X,
-        y,
-        cv=5,
-        scoring=scoring,
-        n_jobs=None,
-        return_estimator=True,
-        error_score="raise",
-    )
+    y_pred = model.predict(X_test_scaled)
+    y_proba = model.predict_proba(X_test_scaled)[:, 1]
 
     metrics = {
-        "accuracy": float(np.mean(cv_results["test_accuracy"])),
-        "precision": float(np.mean(cv_results["test_precision"])),
-        "recall": float(np.mean(cv_results["test_recall"])),
-        "f1_score": float(np.mean(cv_results["test_f1"])),
+        "accuracy": float(accuracy_score(y_test, y_pred)),
+        "precision": float(precision_score(y_test, y_pred, zero_division=0)),
+        "recall": float(recall_score(y_test, y_pred, zero_division=0)),
+        "f1_score": float(f1_score(y_test, y_pred, zero_division=0)),
     }
-
-    # Average coefficients across folds for reference
-    coefficients = np.mean(
-        [estimator.named_steps["classifier"].coef_[0] for estimator in cv_results["estimator"]],
-        axis=0,
-    )
-
-    intercept = float(
-        np.mean(
-            [estimator.named_steps["classifier"].intercept_[0] for estimator in cv_results["estimator"]]
-        )
-    )
-
-    return metrics, coefficients, intercept
-
-
-def _train_calibrated_model(X: pd.DataFrame, y: pd.Series, random_state: int) -> CalibratedClassifierCV:
-    base_pipeline = _build_base_pipeline(random_state)
-    calibrated_clf = CalibratedClassifierCV(estimator=base_pipeline, cv=5, method="sigmoid")
-    calibrated_clf.fit(X, y)
-    return calibrated_clf
-
-
-def _compute_permutation_importance(model: Pipeline, X: pd.DataFrame, y: pd.Series) -> Dict[str, float]:
-    try:
-        result = permutation_importance(
-            model,
-            X,
-            y,
-            n_repeats=20,
-            random_state=42,
-            n_jobs=None,
-        )
-        importances = result.importances_mean
-        normalized = importances / np.sum(np.abs(importances)) if np.sum(np.abs(importances)) else importances
-        return {feature: float(val) for feature, val in zip(FEATURES, normalized)}
-    except Exception as exc:  # pragma: no cover - fallback scenario
-        logger.warning("Permutation importance failed: %s", exc)
-        return {feature: 0.0 for feature in FEATURES}
-
-
-def _save_metadata(
-    metadata_path: str,
-    metadata: Dict[str, object],
-) -> None:
-    os.makedirs(os.path.dirname(metadata_path), exist_ok=True)
-    if os.path.exists(metadata_path):
-        try:
-            with open(metadata_path, "r", encoding="utf-8") as existing_fp:
-                existing_metadata = json.load(existing_fp)
-            if (
-                isinstance(existing_metadata, dict)
-                and "user_threshold" in existing_metadata
-                and "user_threshold" not in metadata
-            ):
-                metadata["user_threshold"] = existing_metadata["user_threshold"]
-        except Exception as exc:  # pragma: no cover - best effort warning
-            logger.warning("Unable to preserve existing metadata: %s", exc)
-    with open(metadata_path, "w", encoding="utf-8") as fp:
-        json.dump(metadata, fp, indent=2)
-
-
-def train_model(
-    data: pd.DataFrame,
-    model_path: str = MODEL_PATH_DEFAULT,
-    metadata_path: str = METADATA_PATH_DEFAULT,
-    random_state: int = 42,
-) -> Tuple[CalibratedClassifierCV, Dict[str, float], Dict[str, object]]:
-    """Train calibrated Logistic Regression model and persist metadata."""
-
-    logger.info("Starting model training with %d samples", len(data))
-    _validate_columns(data)
-
-    X, imputation_stats = _prepare_features(data)
-    y = data["result"].astype(int)
-
-    if y.nunique() < 2:
-        raise ValueError("Training requires at least two classes in the target variable")
-
-    class_counts = y.value_counts().to_dict()
-    class_distribution = {int(cls): float(count / len(y)) for cls, count in class_counts.items()}
-
-    metrics, coefficients, intercept = _compute_metrics(X, y, random_state)
-
-    base_pipeline = _build_base_pipeline(random_state)
-    base_pipeline.fit(X, y)
-
-    calibrated_model = _train_calibrated_model(X, y, random_state)
-
-    y_scores = calibrated_model.predict_proba(X)[:, 1]
-    roc_auc = float(roc_auc_score(y, y_scores))
-    fpr, tpr, thresholds = roc_curve(y, y_scores)
-
-    best_threshold = 0.6
-    best_f1 = -1.0
-    for threshold in thresholds:
-        preds = (y_scores >= threshold).astype(int)
-        current_f1 = f1_score(y, preds, zero_division=0)
-        if current_f1 > best_f1:
-            best_f1 = current_f1
-            best_threshold = float(threshold)
-
-    best_threshold = float(max(best_threshold, 0.6))
-
-    permutation_importances = _compute_permutation_importance(base_pipeline, X, y)
 
     metadata = {
-        "generated_at": datetime.utcnow().isoformat() + "Z",
-        "feature_names": FEATURES,
-        "class_counts": {int(k): int(v) for k, v in class_counts.items()},
-        "class_distribution": class_distribution,
-        "imputation": imputation_stats,
-        "coefficients": {feature: float(weight) for feature, weight in zip(FEATURES, coefficients)},
-        "intercept": intercept,
-        "permutation_importance": permutation_importances,
-        "metrics_cv": metrics,
-        "roc_auc": roc_auc,
-        "recommended_threshold": best_threshold,
-        "scaler": {
-            "mean": base_pipeline.named_steps["scaler"].mean_.tolist(),
-            "scale": base_pipeline.named_steps["scaler"].scale_.tolist(),
-        },
+        "roc_auc": float(roc_auc_score(y_test, y_proba)),
+        "samples_used": int(len(df)),
+        "class_counts": dict(df["result"].value_counts()),
+        "recommended_threshold": 0.6,
     }
 
+    # Save model + scaler + metadata
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
-    joblib.dump(calibrated_model, model_path)
-    logger.info("Calibrated model saved to %s", model_path)
+    joblib.dump({"model": model, "scaler": scaler}, model_path)
 
-    _save_metadata(metadata_path, metadata)
-    logger.info("Training metadata saved to %s", metadata_path)
+    import json
+    with open(metadata_path, "w", encoding="utf-8") as f:
+        json.dump(metadata, f, indent=2)
 
-    return calibrated_model, metrics, metadata
-
-
-def _to_dataframe_from_enrollments(enrollments: List) -> pd.DataFrame:
-    records: List[Dict[str, float]] = []
-    for enrollment in enrollments:
-        records.append(
-            {
-                "attendance": enrollment.attendance,
-                "marks": enrollment.marks,
-                "internal_score": enrollment.internal_score,
-                "result": enrollment.result,
-            }
-        )
-    df = pd.DataFrame(records)
-    df = df.dropna(subset=["result"])
-    return df
-
-
-def train_from_db(
-    enrollments: List,
-    model_path: str = MODEL_PATH_DEFAULT,
-    metadata_path: str = METADATA_PATH_DEFAULT,
-) -> Tuple[CalibratedClassifierCV, Dict[str, float], Dict[str, object]]:
-    df = _to_dataframe_from_enrollments(enrollments)
-
-    if len(df) < 10:
-        raise ValueError(f"Insufficient data for training. Need at least 10 samples, got {len(df)}")
-
-    return train_model(df, model_path=model_path, metadata_path=metadata_path)
+    print(f"✅ Model trained and saved to {model_path}")
+    print(f"📄 Metadata saved to {metadata_path}")
+    return model, metrics, metadata
 
 
 def train_from_csv(
@@ -268,14 +77,15 @@ def train_from_csv(
     model_path: str = MODEL_PATH_DEFAULT,
     metadata_path: str = METADATA_PATH_DEFAULT,
 ) -> Tuple[CalibratedClassifierCV, Dict[str, float], Dict[str, object]]:
-    # Dynamically build absolute path
-    import os
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
+    """Train the model directly from a CSV file (works both locally and on Render)."""
     if csv_path is None:
-        csv_path = os.path.join(BASE_DIR, "../../data/student_data_export.csv")
+        csv_path = os.path.join(DATA_DIR, "student_data_sample.csv")
 
-    print(f"Loading CSV from: {csv_path}")  # For Render logs
+    print(f"📂 Loading CSV from: {csv_path}")
+
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"Dataset not found at {csv_path}")
+
     df = pd.read_csv(csv_path)
     df = df.dropna(subset=["result"])
 
