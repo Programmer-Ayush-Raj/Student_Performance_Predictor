@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { apiClient } from "../api";
 
 function Students() {
@@ -146,7 +147,31 @@ function Students() {
         {/* Alerts */}
         {error && (
           <div className="p-4 bg-red-500/10 border border-red-400/40 rounded-md text-red-300 text-sm">
-            {error}
+            <div className="flex items-start gap-3">
+              <span className="text-red-400 text-lg">⚠️</span>
+              <div className="flex-1">
+                <p className="mb-2">{error}</p>
+                {error.includes("Model not trained") && (
+                  <div className="mt-3 pt-3 border-t border-red-400/20">
+                    <p className="mb-2 text-sm text-red-200">
+                      To train the model:
+                    </p>
+                    <ol className="list-decimal list-inside space-y-1 text-sm text-red-200/80">
+                      <li>Go to the <Link to="/admin" className="text-cyan-400 hover:text-cyan-300 underline">Admin page</Link></li>
+                      <li>Log in with your admin token (default: "changeme")</li>
+                      <li>Click "Retrain Model" button</li>
+                    </ol>
+                  </div>
+                )}
+                {error.includes("Admin authentication required") && (
+                  <div className="mt-3 pt-3 border-t border-red-400/20">
+                    <p className="text-sm text-red-200">
+                      Please <Link to="/admin" className="text-cyan-400 hover:text-cyan-300 underline">log in through the Admin page</Link> first.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
         {batchPredictions && (
