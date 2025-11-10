@@ -26,10 +26,13 @@ METADATA_PATH_DEFAULT = os.path.join(MODEL_DIR, "metadata.json")
 os.makedirs(MODEL_DIR, exist_ok=True)
 os.makedirs(DATA_DIR, exist_ok=True)
 
+# Feature names used in the model
+FEATURES = ["attendance", "marks", "internal_score"]
+
 
 def train_model(df: pd.DataFrame, model_path: str, metadata_path: str) -> Tuple[CalibratedClassifierCV, Dict[str, float], Dict[str, object]]:
     """Train model using dataset and save artifacts."""
-    X = df[["attendance", "marks", "internal_score"]]
+    X = df[FEATURES]
     y = df["result"]
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
