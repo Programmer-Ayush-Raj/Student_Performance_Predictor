@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: student-prediction-backend
+    env: python
+    buildCommand: cd backend && chmod +x build.sh && ./build.sh && pip install -r requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ADMIN_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        value: sqlite:///./db.sqlite
+      - key: MODEL_PATH
+        value: ./models/marks_classifier.joblib
+      - key: MODEL_METADATA_PATH
+        value: ./models/metadata.json
+      - key: PORT
+        fromService:
+          type: web
+          name: student-prediction-backend
+          property: port
+    disk:
+      name: backend-disk
+      mountPath: /opt/render/project/src/backend
+      sizeGB: 1
+

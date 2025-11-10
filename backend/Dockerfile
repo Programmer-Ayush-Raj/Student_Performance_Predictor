@@ -14,6 +14,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY ./app /app/app
 
+# Copy data directory with CSV files
+COPY ./data /app/data
+
+# Copy scripts directory (for import_csv.py)
+COPY ./scripts /app/scripts
+
 # Create necessary directories
 RUN mkdir -p /app/models /app/data
 

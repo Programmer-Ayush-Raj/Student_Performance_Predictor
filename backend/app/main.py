@@ -16,12 +16,17 @@ from .database import get_db, init_db
 from .ml.train import (
     METADATA_PATH_DEFAULT,
     MODEL_PATH_DEFAULT,
+    DATA_DIR,
     train_from_csv,
 )
 from .ml.predictor import InvalidInputError, Predictor
 
 
 logger = logging.getLogger(__name__)
+
+# Get base directory (backend directory)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR_ABS = os.path.join(BASE_DIR, "data")
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -45,8 +50,16 @@ def startup_event():
     """Initialize database tables on startup."""
     init_db()
     # Ensure models and data directories exist
-    os.makedirs("./models", exist_ok=True)
-    os.makedirs("./data", exist_ok=True)
+    os.makedirs(os.path.join(BASE_DIR, "models"), exist_ok=True)
+    os.makedirs(DATA_DIR_ABS, exist_ok=True)
+    
+    # Verify data files exist
+    sample_csv = os.path.join(DATA_DIR_ABS, "student_data_sample.csv")
+    if not os.path.exists(sample_csv):
+        logger.warning(f"⚠️  Warning: student_data_sample.csv not found at {sample_csv}")
+        logger.warning("   The /api/retrain endpoint may not work until the file is available.")
+    else:
+        logger.info(f"✅ Found student_data_sample.csv at {sample_csv}")
 
 
 # Admin token validation
@@ -178,8 +191,9 @@ def predict_batch(db: Session = Depends(get_db), _: None = Depends(verify_admin_
 def retrain(_: None = Depends(verify_admin_token)):
     """Retrain ML model using CSV data."""
     try:
+        csv_path = os.path.join(DATA_DIR_ABS, "student_data_sample.csv")
         _, metrics, metadata = train_from_csv(
-            csv_path="./data/student_data_sample.csv",
+            csv_path=csv_path,
             model_path=MODEL_PATH,
             metadata_path=METADATA_PATH,
         )
@@ -292,7 +306,7 @@ def export_data(db: Session = Depends(get_db), _: None = Depends(verify_admin_to
         if not enrollments:
             raise HTTPException(status_code=400, detail="No data available for export")
 
-        csv_path = "./data/student_data_export.csv"
+        csv_path = os.path.join(DATA_DIR_ABS, "student_data_export.csv")
         os.makedirs(os.path.dirname(csv_path), exist_ok=True)
 
         with open(csv_path, "w", newline="", encoding="utf-8") as f:
