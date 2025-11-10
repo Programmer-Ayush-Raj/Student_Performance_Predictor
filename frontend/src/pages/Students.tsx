@@ -92,11 +92,24 @@ function Students() {
 
   const handleBatchPredict = async () => {
     setBatchLoading(true);
+    setError(null);
+    setBatchPredictions(null);
     try {
+      // Check if admin token exists
+      const token = localStorage.getItem('admin_token');
+      if (!token) {
+        setError("⚠️ Admin authentication required. Please log in through the Admin page first.");
+        return;
+      }
       const response = await apiClient.predictBatch();
       setBatchPredictions(response);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to run prediction");
+      const errorMessage = err instanceof Error ? err.message : "Failed to run batch prediction";
+      if (errorMessage.includes("401") || errorMessage.includes("Unauthorized")) {
+        setError("⚠️ Unauthorized. Please log in through the Admin page with your admin token.");
+      } else {
+        setError(`Batch prediction error: ${errorMessage}`);
+      }
     } finally {
       setBatchLoading(false);
     }
