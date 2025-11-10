@@ -23,6 +23,10 @@ COPY ./scripts /app/scripts
 # Create necessary directories
 RUN mkdir -p /app/models /app/data
 
+# Verify data files are copied
+RUN ls -la /app/data/ || echo "Data directory not found"
+RUN test -f /app/data/student_data_sample.csv && echo "✅ CSV file found" || echo "⚠️  CSV file not found"
+
 # Expose port
 EXPOSE 8000
 
