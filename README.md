@@ -14,9 +14,7 @@
 ---
 
 ## 🌐 Live Demo  
-> *(If deployed — add link here, e.g. `https://student-predictor.vercel.app`)*  
-> Otherwise, skip this section or mark as “Coming Soon 🚧”
-
+student-performance-predictor-brown.vercel.app
 ---
 
 ## 🧠 Overview  
