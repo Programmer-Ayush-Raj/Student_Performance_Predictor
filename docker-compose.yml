@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: student-prediction-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./backend/db.sqlite:/app/db.sqlite
+      - ./backend/models:/app/models
+      - ./backend/data:/app/data
+    environment:
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-changeme}
+      - DATABASE_URL=sqlite:///./db.sqlite
+      - MODEL_PATH=./models/marks_classifier.joblib
+    restart: unless-stopped
+    networks:
+      - student-prediction-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: student-prediction-frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - student-prediction-network
+
+networks:
+  student-prediction-network:
+    driver: bridge
+

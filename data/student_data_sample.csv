@@ -1,0 +1,32 @@
+student_id,course_id,attendance,marks,internal_score,final_exam_score,result,student_name,course_name,dept_id
+1,1,85,78,22,65,1,John Doe,Data Structures,1
+1,2,90,82,25,70,1,John Doe,Algorithms,1
+2,1,75,65,18,55,0,Jane Smith,Data Structures,1
+2,3,88,80,23,68,1,Jane Smith,Database Systems,1
+3,4,92,85,26,72,1,Bob Johnson,Calculus I,2
+3,5,70,60,15,50,0,Bob Johnson,Linear Algebra,2
+4,1,95,88,28,75,1,Alice Williams,Data Structures,1
+4,2,80,72,20,62,1,Alice Williams,Algorithms,1
+5,4,65,55,12,45,0,Charlie Brown,Calculus I,2
+5,5,85,78,22,66,1,Charlie Brown,Linear Algebra,2
+6,6,90,82,24,70,1,Diana Prince,Physics I,3
+6,7,75,68,18,58,1,Diana Prince,Quantum Mechanics,3
+7,8,88,80,23,67,1,Edward Norton,Organic Chemistry,4
+7,9,70,62,16,52,0,Edward Norton,Cell Biology,5
+8,1,82,75,21,64,1,Fiona Green,Data Structures,1
+8,3,90,85,26,71,1,Fiona Green,Database Systems,1
+9,4,60,50,10,42,0,George White,Calculus I,2
+9,5,78,70,19,60,1,George White,Linear Algebra,2
+10,6,85,78,22,65,1,Helen Black,Physics I,3
+10,7,72,65,17,55,0,Helen Black,Quantum Mechanics,3
+11,8,92,85,27,73,1,Ian Gray,Organic Chemistry,4
+11,9,80,73,21,61,1,Ian Gray,Cell Biology,5
+12,1,68,58,14,48,0,Julia Red,Data Structures,1
+12,2,88,82,25,69,1,Julia Red,Algorithms,1
+13,3,85,77,22,64,1,Kevin Blue,Database Systems,1
+13,1,75,68,18,57,0,Kevin Blue,Data Structures,1
+14,4,90,83,26,71,1,Lisa Yellow,Calculus I,2
+14,5,65,56,13,46,0,Lisa Yellow,Linear Algebra,2
+15,6,82,75,21,63,1,Mark Orange,Physics I,3
+15,7,88,81,24,68,1,Mark Orange,Quantum Mechanics,3
+

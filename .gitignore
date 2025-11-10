@@ -1,0 +1,17 @@
+backend/node_modules/
+frontend/node_modules/
+**/.env
+**/.env.*
+**/*.log
+**/dist/
+**/build/
+.DS_Store
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+
+# Database (optional, if large or local only)
+backend/db.sqlite
